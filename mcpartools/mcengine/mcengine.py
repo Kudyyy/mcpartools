@@ -80,3 +80,6 @@ done""",
     def find_external_files(self, run_input_dir):
         """Returns paths to found external files"""
         raise NotImplementedError()
+
+    def predict_best(self, particle_no, input_dir):
+        raise NotImplementedError

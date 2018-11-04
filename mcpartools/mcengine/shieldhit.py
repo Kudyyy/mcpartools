@@ -1,6 +1,7 @@
 import logging
 import os
 from pkg_resources import resource_string
+from math import sqrt
 
 from mcpartools.mcengine.mcengine import Engine
 
@@ -11,6 +12,9 @@ class ShieldHit(Engine):
 
     default_run_script_path = os.path.join('data', 'run_shieldhit.sh')
     output_wildcard = "*.bdo"
+    threads_and_particles_regression = 0.00795388  # a, time = a * (1/x1) * x2 where x1 = threads_no, x2 = particles_no
+    threads_and_size_regression = 0.00889642  # a, time = a * x1 * x2 where x1 = threads_no, x2 = size
+    density_and_size_regression = 46 / 6  # a, size = a * x where x1 = Xbins * Ybins * Zbins / 1000000
 
     def __init__(self, input_path, mc_run_script, collect_method, mc_engine_options):
         Engine.__init__(self, input_path, mc_run_script, collect_method, mc_engine_options)
@@ -242,3 +246,31 @@ class ShieldHit(Engine):
         with open(config_file, 'w') as outfile:
             for line in lines:
                 outfile.write(line)
+
+    def predict_best(self, particle_no, input_dir):
+        size = self.calculate_size(input_dir)
+        a1 = self.threads_and_size_regression * size
+        a2 = self.threads_and_particles_regression * particle_no
+        result = int(sqrt(a2 / a1))
+        result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
+        logger.debug("Best number of threads will be {0}".format(result))
+        return result
+
+    def calculate_size(self, input_dir):
+        beam_file, geo_file, mat_file, detect_file = self.input_files
+        count = True
+        a = self.density_and_size_regression
+        files_size = 0
+        with open(os.path.join(input_dir, os.path.basename(detect_file)), 'r') as detect:
+            for i, line in enumerate(detect):
+                if i % 3 == 1:
+                    count = True
+                    scoring = line.split()[0]
+                    logger.debug("Found {0} in detect.dat".format(scoring))
+                    if scoring == "GEOMAP":
+                        count = False
+                if i % 3 == 2 and count:
+                    x, y, z = [int(i) for i in line.split()[0:3]]
+                    files_size += a * (x * y * z) / 1000000
+                    logger.debug("x = {0}, y = {1}, z = {2}, files_size = {3} ".format(x, y, z, files_size))
+        return files_size

@@ -92,6 +92,9 @@ class Options:
         # no checks needed - argparse does it
         self.batch = args.batch
 
+        # no checks needed - argparse does it
+        self.prediction = args.prediction
+
     @property
     def valid(self):
         return self._valid
@@ -134,14 +137,19 @@ class Generator:
                              self.options.batch, [supported.id for supported in SchedulerDiscover.supported])
                 raise NotImplementedError("Class not found: " + self.options.batch)
 
+        # copy input files
+        self.copy_input()
+
+        # predict jobs_no for particle_no if option was chosen
+        if self.options.prediction:
+            self.options.jobs_no = self.mc_engine.predict_best(self.options.particle_no, self.input_dir)
+            self.options.particle_no = self.options.particle_no // self.options.jobs_no
+
         # generate tmp dir with workspace
         self.generate_workspace()
 
         # generate submit script
         self.generate_submit_script()
-
-        # copy input files
-        self.copy_input()
 
         # make symlinks to external files found
         self.symlink_external_files()
@@ -242,3 +250,4 @@ class Generator:
         file_logger.info('Date and time: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         file_logger.info('username@hostname: ' + getpass.getuser() + '@' + socket.gethostname())
         file_logger.info('Current working directory: ' + os.getcwd())
+
