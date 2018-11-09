@@ -81,5 +81,5 @@ done""",
         """Returns paths to found external files"""
         raise NotImplementedError()
 
-    def predict_best(self, particle_no, input_dir):
+    def predict_best(self, particle_no):
         raise NotImplementedError

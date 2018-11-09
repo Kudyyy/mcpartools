@@ -35,6 +35,9 @@ class ShieldHit(Engine):
         self.particle_no = 1
         self.rng_seed = 1
 
+    def __str__(self):
+        return "ShieldHit"
+
     @property
     def input_files(self):
         base = os.path.abspath(self.input_path)
@@ -247,8 +250,8 @@ class ShieldHit(Engine):
             for line in lines:
                 outfile.write(line)
 
-    def predict_best(self, particle_no, input_dir):
-        size = self.calculate_size(input_dir)
+    def predict_best(self, particle_no):
+        size = self.calculate_size()
         a1 = self.threads_and_size_regression * size
         a2 = self.threads_and_particles_regression * particle_no
         result = int(sqrt(a2 / a1))
@@ -256,12 +259,12 @@ class ShieldHit(Engine):
         logger.debug("Best number of threads will be {0}".format(result))
         return result
 
-    def calculate_size(self, input_dir):
+    def calculate_size(self):
         beam_file, geo_file, mat_file, detect_file = self.input_files
         count = True
         a = self.density_and_size_regression
         files_size = 0
-        with open(os.path.join(input_dir, os.path.basename(detect_file)), 'r') as detect:
+        with open(detect_file, 'r') as detect:
             for i, line in enumerate(detect):
                 if i % 3 == 1:
                     count = True

@@ -17,7 +17,6 @@ file_logger.propagate = False
 
 
 class Options:
-
     collect_methods = ('mv', 'cp', 'plotdata', 'image', 'custom')
 
     def __init__(self, args):
@@ -95,6 +94,9 @@ class Options:
         # no checks needed - argparse does it
         self.prediction = args.prediction
 
+        # no checks needed - argparse does it
+        self.dry_run = args.dry_run
+
     @property
     def valid(self):
         return self._valid
@@ -118,6 +120,32 @@ class Generator:
             logger.error("Invalid options, aborting run")
             return None
 
+        logger.info("Given configuration:")
+        logger.info("Particles per job - {0}".format(self.options.particle_no))
+        logger.info("Number of jobs - {0}".format(self.options.jobs_no))
+
+        # predict jobs_no for particle_no if option was chosen
+        if self.options.prediction:
+            try:
+                total_part_no = self.options.particle_no * self.options.jobs_no
+                self.options.jobs_no = self.mc_engine.predict_best(total_part_no)
+                self.options.particle_no = total_part_no // self.options.jobs_no
+
+                logger.info("Predicted best configuration:")
+                logger.info("Particles per job - {0}".format(self.options.particle_no))
+                logger.info("Number of jobs - {0}".format(self.options.jobs_no))
+
+                if total_part_no - self.options.particle_no * self.options.jobs_no > 0:
+                    logger.warn("{0} is not divided by {1} !".format(total_part_no, self.options.jobs_no))
+                    logger.warn("{0} particles will be calculated! NOT {1} !".format(
+                        self.options.particle_no * self.options.jobs_no, total_part_no))
+
+            except NotImplementedError:
+                logger.error("Prediction feature is not supported for {0}".format(self.mc_engine))
+
+        if self.options.dry_run:
+            return None
+
         # generate main dir according to date
         self.generate_main_dir()
 
@@ -137,19 +165,14 @@ class Generator:
                              self.options.batch, [supported.id for supported in SchedulerDiscover.supported])
                 raise NotImplementedError("Class not found: " + self.options.batch)
 
-        # copy input files
-        self.copy_input()
-
-        # predict jobs_no for particle_no if option was chosen
-        if self.options.prediction:
-            self.options.jobs_no = self.mc_engine.predict_best(self.options.particle_no, self.input_dir)
-            self.options.particle_no = self.options.particle_no // self.options.jobs_no
-
         # generate tmp dir with workspace
         self.generate_workspace()
 
         # generate submit script
         self.generate_submit_script()
+
+        # copy input files
+        self.copy_input()
 
         # make symlinks to external files found
         self.symlink_external_files()
@@ -250,4 +273,3 @@ class Generator:
         file_logger.info('Date and time: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         file_logger.info('username@hostname: ' + getpass.getuser() + '@' + socket.gethostname())
         file_logger.info('Current working directory: ' + os.getcwd())
-
