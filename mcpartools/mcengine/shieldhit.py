@@ -9,11 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 class ShieldHit(Engine):
-
     default_run_script_path = os.path.join('data', 'run_shieldhit.sh')
     output_wildcard = "*.bdo"
-    threads_and_particles_regression = 0.00795388  # a, time = a * (1/x1) * x2 where x1 = threads_no, x2 = particles_no
-    threads_and_size_regression = 0.00889642  # a, time = a * x1 * x2 where x1 = threads_no, x2 = size
+    jobs_and_particles_regression = 0.00795388  # a, time = a * (1/x1) * x2 where x1 = jobs_no, x2 = particles_no
+    jobs_and_size_regression = 0.00889642  # a, time = a * x1 * x2 where x1 = jobs_no, x2 = size
     density_and_size_regression = 46 / 6  # a, size = a * x where x1 = Xbins * Ybins * Zbins / 1000000
 
     def __init__(self, input_path, mc_run_script, collect_method, mc_engine_options):
@@ -31,6 +30,8 @@ class ShieldHit(Engine):
             logger.debug("Using user run script: " + self.run_script_path)
 
         self.collect_script_content = resource_string(__name__, self.collect_script).decode('ascii')
+
+        self.files_size = self.calculate_size()
 
         self.particle_no = 1
         self.rng_seed = 1
@@ -125,12 +126,12 @@ class ShieldHit(Engine):
                 # line length checking to prevent IndexError
                 if len(split_line) > 2 and split_line[0] == "USEBMOD":
                     logger.debug("Found reference to external file in BEAM file: {0} {1}".format(
-                                 split_line[0], split_line[2]))
+                        split_line[0], split_line[2]))
                     external_files.append(split_line[2])
                     paths_to_replace.append(split_line[2])
                 elif len(split_line) > 1 and split_line[0] == "USECBEAM":
                     logger.debug("Found reference to external file in BEAM file: {0} {1}".format(
-                                 split_line[0], split_line[1]))
+                        split_line[0], split_line[1]))
                     external_files.append(split_line[1])
                     paths_to_replace.append(split_line[1])
         if paths_to_replace:
@@ -251,12 +252,13 @@ class ShieldHit(Engine):
                 outfile.write(line)
 
     def predict_best(self, particle_no):
-        size = self.calculate_size()
-        a1 = self.threads_and_size_regression * size
-        a2 = self.threads_and_particles_regression * particle_no
-        result = int(sqrt(a2 / a1))
-        result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
-        logger.debug("Best number of threads will be {0}".format(result))
+        a1 = self.jobs_and_size_regression * self.files_size
+        a2 = self.jobs_and_particles_regression * particle_no
+        try:
+            result = int(sqrt(a2 / a1))
+            result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
+        except ZeroDivisionError:
+            result = 750
         return result
 
     def calculate_size(self):
@@ -277,3 +279,8 @@ class ShieldHit(Engine):
                     files_size += a * (x * y * z) / 1000000
                     logger.debug("x = {0}, y = {1}, z = {2}, files_size = {3} ".format(x, y, z, files_size))
         return files_size
+
+    def calculation_time(self, particles_no, jobs_no):
+
+        return self.jobs_and_particles_regression * (
+            1 / float(jobs_no)) * particles_no * jobs_no + self.jobs_and_size_regression * self.files_size * jobs_no
