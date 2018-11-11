@@ -84,5 +84,5 @@ done""",
     def predict_best(self, particle_no):
         raise NotImplementedError
 
-    def calculation_time(self, particles_no, jobs_no):
+    def calculation_time(self, total_particles_no, jobs_no):
         raise NotImplementedError

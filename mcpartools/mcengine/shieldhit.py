@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ShieldHit(Engine):
     default_run_script_path = os.path.join('data', 'run_shieldhit.sh')
     output_wildcard = "*.bdo"
-    jobs_and_particles_regression = 0.00795388  # a, time = a * (1/x1) * x2 where x1 = jobs_no, x2 = particles_no
+    jobs_and_particles_regression = 0.00795388  # a, time = a * (1/x1) * x2 where x1 = jobs_no, x2 = total_particles_no
     jobs_and_size_regression = 0.00889642  # a, time = a * x1 * x2 where x1 = jobs_no, x2 = size
     density_and_size_regression = 46 / 6  # a, size = a * x where x1 = Xbins * Ybins * Zbins / 1000000
 
@@ -251,9 +251,9 @@ class ShieldHit(Engine):
             for line in lines:
                 outfile.write(line)
 
-    def predict_best(self, particle_no):
+    def predict_best(self, total_particle_no):
         a1 = self.jobs_and_size_regression * self.files_size
-        a2 = self.jobs_and_particles_regression * particle_no
+        a2 = self.jobs_and_particles_regression * total_particle_no
         try:
             result = int(sqrt(a2 / a1))
             result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
@@ -281,6 +281,6 @@ class ShieldHit(Engine):
         return files_size
 
     def calculation_time(self, particles_no, jobs_no):
-
+        total_particles_no = particles_no * jobs_no
         return self.jobs_and_particles_regression * (
-            1 / float(jobs_no)) * particles_no * jobs_no + self.jobs_and_size_regression * self.files_size * jobs_no
+            1 / float(jobs_no)) * total_particles_no + self.jobs_and_size_regression * self.files_size * jobs_no

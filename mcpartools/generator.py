@@ -123,7 +123,7 @@ class Generator:
         logger.info("Given configuration:")
         logger.info("Particles per job - {0}".format(self.options.particle_no))
         logger.info("Number of jobs - {0}".format(self.options.jobs_no))
-        logger.info("Calculation time in seconds - {0}\n".format(
+        logger.info("Estimated calculation time in seconds - {0}\n".format(
             self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no)))
 
         # predict jobs_no for particle_no if option was chosen
@@ -136,7 +136,7 @@ class Generator:
                 logger.info("Predicted configuration:")
                 logger.info("Particles per job - {0}".format(self.options.particle_no))
                 logger.info("Number of jobs - {0}".format(self.options.jobs_no))
-                logger.info("Calculation time in seconds - {0}\n".format(
+                logger.info("Estimated calculation time in seconds - {0}\n".format(
                     self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no)))
 
                 if total_part_no - self.options.particle_no * self.options.jobs_no > 0:
