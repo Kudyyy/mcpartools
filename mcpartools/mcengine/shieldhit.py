@@ -1,5 +1,6 @@
 import logging
 import os
+from configparser import ConfigParser
 from pkg_resources import resource_string
 from math import sqrt
 
@@ -10,10 +11,8 @@ logger = logging.getLogger(__name__)
 
 class ShieldHit(Engine):
     default_run_script_path = os.path.join('data', 'run_shieldhit.sh')
+    regression_cfg_path = os.path.join('data', 'regression.ini')
     output_wildcard = "*.bdo"
-    jobs_and_particles_regression = 0.00795388  # a, time = a * (1/x1) * x2 where x1 = jobs_no, x2 = total_particles_no
-    jobs_and_size_regression = 0.00889642  # a, time = a * x1 * x2 where x1 = jobs_no, x2 = size
-    density_and_size_regression = 46 / 6  # a, size = a * x where x1 = Xbins * Ybins * Zbins / 1000000
 
     def __init__(self, input_path, mc_run_script, collect_method, mc_engine_options):
         Engine.__init__(self, input_path, mc_run_script, collect_method, mc_engine_options)
@@ -28,6 +27,21 @@ class ShieldHit(Engine):
             self.run_script_content = tpl_fd.read()
             tpl_fd.close()
             logger.debug("Using user run script: " + self.run_script_path)
+
+        config = self.regression_config
+        if config is None:
+            logger.warning("Could not properly parse configuration file for prediction feature")
+        else:
+            try:
+                self.jobs_and_particles_regression = float(config["JOBS_AND_PARTICLES"])
+                self.jobs_and_size_regression = float(config["JOBS_AND_SIZE"])
+                self.density_and_size_regression = float(config["DENSITY_AND_SIZE"])
+                logger.debug("Regressions from config file:")
+                logger.debug("JOBS_AND_PARTICLES = {0}".format(self.jobs_and_particles_regression))
+                logger.debug("JOBS_AND_SIZE = {0}".format(self.jobs_and_size_regression))
+                logger.debug("DENSITY_AND_SIZE = {0}".format(self.density_and_size_regression))
+            except ValueError:
+                logger.warning("Config file could not be read properly! Probably coefficients are not floats")
 
         self.collect_script_content = resource_string(__name__, self.collect_script).decode('ascii')
 
@@ -45,6 +59,17 @@ class ShieldHit(Engine):
         files = ('beam.dat', 'geo.dat', 'mat.dat', 'detect.dat')
         result = (os.path.join(base, f) for f in files)
         return result
+
+    @property
+    def regression_config(self):
+        config = ConfigParser()
+        cfg_rs = resource_string(__name__, self.regression_cfg_path)
+        config_string = cfg_rs.decode('ascii')
+        config.read_string(config_string)
+        try:
+            return config["SHIELDHIT"]
+        except KeyError:
+            return None
 
     def randomize(self, new_seed, output_dir=None):
         self.rng_seed = new_seed
@@ -252,35 +277,46 @@ class ShieldHit(Engine):
                 outfile.write(line)
 
     def predict_best(self, total_particle_no):
-        a1 = self.jobs_and_size_regression * self.files_size
-        a2 = self.jobs_and_particles_regression * total_particle_no
         try:
+            a1 = self.jobs_and_size_regression * self.files_size
+            a2 = self.jobs_and_particles_regression * total_particle_no
             result = int(sqrt(a2 / a1))
             result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
         except ZeroDivisionError:
             result = 750
+        except AttributeError:
+            logger.error("Could not predict configuration! Check correctness of config file for prediction feature")
+            return None
         return result
 
     def calculate_size(self):
-        beam_file, geo_file, mat_file, detect_file = self.input_files
-        count = True
-        a = self.density_and_size_regression
-        files_size = 0
-        with open(detect_file, 'r') as detect:
-            for i, line in enumerate(detect):
-                if i % 3 == 1:
-                    count = True
-                    scoring = line.split()[0]
-                    logger.debug("Found {0} in detect.dat".format(scoring))
-                    if scoring == "GEOMAP":
-                        count = False
-                if i % 3 == 2 and count:
-                    x, y, z = [int(i) for i in line.split()[0:3]]
-                    files_size += a * (x * y * z) / 1000000
-                    logger.debug("x = {0}, y = {1}, z = {2}, files_size = {3} ".format(x, y, z, files_size))
-        return files_size
+        try:
+            beam_file, geo_file, mat_file, detect_file = self.input_files
+            count = True
+            a = self.density_and_size_regression
+            files_size = 0
+            with open(detect_file, 'r') as detect:
+                for i, line in enumerate(detect):
+                    if i % 3 == 1:
+                        count = True
+                        scoring = line.split()[0]
+                        logger.debug("Found {0} in detect.dat".format(scoring))
+                        if scoring == "GEOMAP":
+                            count = False
+                    if i % 3 == 2 and count:
+                        x, y, z = [int(i) for i in line.split()[0:3]]
+                        files_size += a * (x * y * z) / 1000000
+                        logger.debug("x = {0}, y = {1}, z = {2}, files_size = {3} ".format(x, y, z, files_size))
+            return files_size
+        except AttributeError:
+            logger.error("Could not calculate size of files! Check correctness of config file for prediction feature")
+            return None
 
     def calculation_time(self, particles_no, jobs_no):
-        total_particles_no = particles_no * jobs_no
-        return self.jobs_and_particles_regression * (
-            1 / float(jobs_no)) * total_particles_no + self.jobs_and_size_regression * self.files_size * jobs_no
+        try:
+            total_particles_no = particles_no * jobs_no
+            return self.jobs_and_particles_regression * (
+                1 / float(jobs_no)) * total_particles_no + self.jobs_and_size_regression * self.files_size * jobs_no
+        except AttributeError:
+            logger.error("Could not estimate calculation time! Check correctness of config file for prediction feature")
+            return None

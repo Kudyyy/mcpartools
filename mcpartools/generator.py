@@ -130,19 +130,23 @@ class Generator:
         if self.options.prediction:
             try:
                 total_part_no = self.options.particle_no * self.options.jobs_no
-                self.options.jobs_no = self.mc_engine.predict_best(total_part_no)
-                self.options.particle_no = total_part_no // self.options.jobs_no
+                predicted_jobs_no = self.mc_engine.predict_best(total_part_no)
+                if predicted_jobs_no:
+                    self.options.jobs_no = predicted_jobs_no
+                    self.options.particle_no = total_part_no // self.options.jobs_no
 
-                logger.info("Predicted configuration:")
-                logger.info("Particles per job - {0}".format(self.options.particle_no))
-                logger.info("Number of jobs - {0}".format(self.options.jobs_no))
-                logger.info("Estimated calculation time in seconds - {0}\n".format(
-                    self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no)))
+                    logger.info("Predicted configuration:")
+                    logger.info("Particles per job - {0}".format(self.options.particle_no))
+                    logger.info("Number of jobs - {0}".format(self.options.jobs_no))
+                    logger.info("Estimated calculation time in seconds - {0}\n".format(
+                        self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no)))
 
-                if total_part_no - self.options.particle_no * self.options.jobs_no > 0:
-                    logger.warn("{0} is not divided by {1} !".format(total_part_no, self.options.jobs_no))
-                    logger.warn("{0} particles will be calculated! NOT {1} !".format(
-                        self.options.particle_no * self.options.jobs_no, total_part_no))
+                    if total_part_no - self.options.particle_no * self.options.jobs_no > 0:
+                        logger.warn("{0} is not divided by {1} !".format(total_part_no, self.options.jobs_no))
+                        logger.warn("{0} particles will be calculated! NOT {1} !".format(
+                            self.options.particle_no * self.options.jobs_no, total_part_no))
+                else:
+                    return None
 
             except NotImplementedError:
                 logger.error("Prediction feature is not supported for {0}".format(self.mc_engine))
