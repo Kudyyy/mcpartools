@@ -1,8 +1,8 @@
 import logging
 import os
+import numpy as np
 from configparser import ConfigParser
 from pkg_resources import resource_string
-from math import sqrt
 
 from mcpartools.mcengine.mcengine import Engine
 
@@ -34,7 +34,7 @@ class ShieldHit(Engine):
         else:
             try:
                 self.jobs_and_particles_regression = float(config["JOBS_AND_PARTICLES"])
-                self.jobs_and_size_regression = float(config["JOBS_AND_SIZE"])
+                self.jobs_and_size_regression = [float(config["JOBS_AND_SIZE_A"]), float(config["JOBS_AND_SIZE_B"])]
                 self.density_and_size_regression = float(config["DENSITY_AND_SIZE"])
                 logger.debug("Regressions from config file:")
                 logger.debug("JOBS_AND_PARTICLES = {0}".format(self.jobs_and_particles_regression))
@@ -42,6 +42,8 @@ class ShieldHit(Engine):
                 logger.debug("DENSITY_AND_SIZE = {0}".format(self.density_and_size_regression))
             except ValueError:
                 logger.warning("Config file could not be read properly! Probably coefficients are not floats")
+            except KeyError:
+                logger.warning("Config file could not be read properly! Probably missing some variables")
 
         self.collect_script_content = resource_string(__name__, self.collect_script).decode('ascii')
 
@@ -278,9 +280,10 @@ class ShieldHit(Engine):
 
     def predict_best(self, total_particle_no):
         try:
-            a1 = self.jobs_and_size_regression * self.files_size
-            a2 = self.jobs_and_particles_regression * total_particle_no
-            result = int(sqrt(a2 / a1))
+            coeff = [2 * self.jobs_and_size_regression[1] * self.files_size,
+                     self.jobs_and_size_regression[1] * self.files_size, 0,
+                     -self.jobs_and_particles_regression * total_particle_no]
+            result = min([int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0])
             result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
         except ZeroDivisionError:
             result = 750
@@ -315,8 +318,9 @@ class ShieldHit(Engine):
     def calculation_time(self, particles_no, jobs_no):
         try:
             total_particles_no = particles_no * jobs_no
-            return self.jobs_and_particles_regression * (
-                1 / float(jobs_no)) * total_particles_no + self.jobs_and_size_regression * self.files_size * jobs_no
+            return self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no + \
+                self.jobs_and_size_regression[0] * self.files_size * jobs_no + \
+                self.jobs_and_size_regression[1] * self.files_size * jobs_no ** 2
         except AttributeError:
             logger.error("Could not estimate calculation time! Check correctness of config file for prediction feature")
             return None
