@@ -13,6 +13,7 @@ class ShieldHit(Engine):
     default_run_script_path = os.path.join('data', 'run_shieldhit.sh')
     regression_cfg_path = os.path.join('data', 'regression.ini')
     output_wildcard = "*.bdo"
+    max_predicted_job_number = 750
 
     def __init__(self, input_path, mc_run_script, collect_method, mc_engine_options):
         Engine.__init__(self, input_path, mc_run_script, collect_method, mc_engine_options)
@@ -283,10 +284,12 @@ class ShieldHit(Engine):
             coeff = [2 * self.jobs_and_size_regression[1] * self.files_size,
                      self.jobs_and_size_regression[0] * self.files_size, 0,
                      -self.jobs_and_particles_regression * total_particle_no]
-            result = min([int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0])
-            result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
+            results = [int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0]
+            result = sorted([(x, self._calculation_time(total_particle_no, x)) for x in results], key=lambda x: x[1])[0][0]
+
+            result = self.max_predicted_job_number if result > self.max_predicted_job_number else result
         except ZeroDivisionError:
-            result = 750
+            result = self.max_predicted_job_number
         except AttributeError:
             logger.error("Could not predict configuration! Check correctness of config file for prediction feature")
             return None
@@ -315,9 +318,11 @@ class ShieldHit(Engine):
             logger.error("Could not calculate size of files! Check correctness of config file for prediction feature")
             return None
 
-    def calculation_time(self, particles_no, jobs_no):
+    def calculation_time(self, particles_no_per_job, jobs_no):
+        return self._calculation_time(particles_no_per_job * jobs_no, jobs_no)
+
+    def _calculation_time(self, total_particles_no, jobs_no):
         try:
-            total_particles_no = particles_no * jobs_no
             return self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no + \
                 self.jobs_and_size_regression[0] * self.files_size * jobs_no + \
                 self.jobs_and_size_regression[1] * self.files_size * jobs_no ** 2
