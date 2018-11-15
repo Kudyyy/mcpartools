@@ -281,7 +281,7 @@ class ShieldHit(Engine):
     def predict_best(self, total_particle_no):
         try:
             coeff = [2 * self.jobs_and_size_regression[1] * self.files_size,
-                     self.jobs_and_size_regression[1] * self.files_size, 0,
+                     self.jobs_and_size_regression[0] * self.files_size, 0,
                      -self.jobs_and_particles_regression * total_particle_no]
             result = min([int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0])
             result = 750 if result > 750 else result  # Regression was not tested with more than 750 threads
