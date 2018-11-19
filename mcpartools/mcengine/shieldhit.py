@@ -59,8 +59,6 @@ class ShieldHit(Engine):
                                         (self.files_size[0] - self.files_and_size_regression[1]) ** 2 + \
                                         self.files_and_size_regression[2] * ((self.files_size[1] + 10) / 10.0)
 
-        print("files = ", self.files_size, " | files_no_multiplier = ", self.files_no_multiplier)
-
         self.particle_no = 1
         self.rng_seed = 1
 
@@ -292,16 +290,16 @@ class ShieldHit(Engine):
 
     def predict_best(self, total_particle_no, collect_type):
         try:
-            if self.files_size[0] < 10:
+            if collect_type == "mv":
+                return self.max_predicted_job_number
+            elif self.files_size[0] < 10:
                 coeff = [self.collect_std_deviation * self.files_no_multiplier * self.collect_coefficient(collect_type) * (3 * 15 / 125000000.0),
                          0, 0, 0, -self.jobs_and_particles_regression * total_particle_no * self.calculation_std_deviation]
-                print("< 10 | ", coeff)
             else:
                 coeff = [self.collect_std_deviation * self.files_no_multiplier * self.collect_coefficient(collect_type) *
                          (self.jobs_and_size_regression[1] * self.files_size[0] ** 2 +
                          self.jobs_and_size_regression[0] * self.files_size[0]), 0,
                          -self.jobs_and_particles_regression * total_particle_no * self.calculation_std_deviation]
-                print("> 10 | ", coeff)
             results = [int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0]
             result = sorted([(x, self._calculation_time(total_particle_no, x, collect_type)) for x in results],
                             key=lambda x: x[1])[0][0]
@@ -348,17 +346,21 @@ class ShieldHit(Engine):
 
     def _calculation_time(self, total_particles_no, jobs_no, collect_type):
         try:
-            if self.files_size[0] < 10:
+            if collect_type == "mv":
+                collect_time = float(self.config['MV_COLLECT_TIME'])
+            elif self.files_size[0] < 10:
                 collect_time = 5 + 15 * (jobs_no ** 3) / 125000000
             else:
                 collect_time = self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no + \
                                self.jobs_and_size_regression[1] * jobs_no * self.files_size[0] ** 2
 
             calc_time = self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no
-            print(" colect = ", collect_time, " | calc = ", calc_time)
-            collect_time *= self.files_no_multiplier * self.collect_std_deviation * self.collect_coefficient(collect_type)
+            collect_time *= self.files_no_multiplier * self.collect_std_deviation
+            collect_coef = self.collect_coefficient(collect_type)
+            if collect_coef > 0:
+                collect_time *= collect_coef
+
             calc_time *= self.calculation_std_deviation
-            print("after coeff | colect = ", collect_time, " | calc = ", calc_time)
 
             return collect_time + calc_time
         except AttributeError:
