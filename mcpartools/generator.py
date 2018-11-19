@@ -124,8 +124,10 @@ class Generator:
         logger.info("Given configuration:")
         logger.info("Particles per job - {0}".format(self.options.particle_no))
         logger.info("Number of jobs - {0}".format(self.options.jobs_no))
-        logger.info("Estimated calculation time in seconds - {0}\n".format(
-            self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no, self.options.collect)))
+        estimated_time = self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no,
+                                                         self.options.collect)
+        m, s = divmod(estimated_time, 60)
+        logger.info("Estimated calculation time: {} minute(s) {} second(s)\n".format(int(m), int(s)))
 
         # predict jobs_no for particle_no if option was chosen
         if self.options.prediction:
@@ -139,9 +141,11 @@ class Generator:
                     logger.info("Predicted configuration:")
                     logger.info("Particles per job - {0}".format(self.options.particle_no))
                     logger.info("Number of jobs - {0}".format(self.options.jobs_no))
-                    logger.info("Estimated calculation time in seconds - {0}\n".format(
-                        self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no,
-                                                        self.options.collect)))
+
+                    estimated_time = self.mc_engine.calculation_time(self.options.particle_no, self.options.jobs_no,
+                                                                     self.options.collect)
+                    m, s = divmod(estimated_time, 60)
+                    logger.info("Estimated calculation time: {} minute(s) {} second(s)\n".format(int(m), int(s)))
 
                     if total_part_no - self.options.particle_no * self.options.jobs_no > 0:
                         logger.warn("{0} is not divided by {1} !".format(total_part_no, self.options.jobs_no))

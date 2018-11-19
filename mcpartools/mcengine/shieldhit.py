@@ -14,6 +14,7 @@ class ShieldHit(Engine):
     regression_cfg_path = os.path.join('data', 'regression.ini')
     output_wildcard = "*.bdo"
     max_predicted_job_number = 750
+    mv_const = 1
 
     def __init__(self, input_path, mc_run_script, collect_method, mc_engine_options):
         Engine.__init__(self, input_path, mc_run_script, collect_method, mc_engine_options)
@@ -292,7 +293,9 @@ class ShieldHit(Engine):
 
     def predict_best(self, total_particle_no, collect_type):
         try:
-            if self.files_size[0] < 10:
+            if collect_type == "mv":
+                coeff = [0, self.mv_const, 0, -self.jobs_and_particles_regression * total_particle_no * self.calculation_std_deviation]
+            elif self.files_size[0] < 10:
                 coeff = [self.collect_std_deviation * self.files_no_multiplier * self.collect_coefficient(collect_type) * (3 * 15 / 125000000.0),
                          0, 0, 0, -self.jobs_and_particles_regression * total_particle_no * self.calculation_std_deviation]
                 print("< 10 | ", coeff)
@@ -348,7 +351,9 @@ class ShieldHit(Engine):
 
     def _calculation_time(self, total_particles_no, jobs_no, collect_type):
         try:
-            if self.files_size[0] < 10:
+            if collect_type == "mv":
+                collect_time = self.mv_const
+            elif self.files_size[0] < 10:
                 collect_time = 5 + 15 * (jobs_no ** 3) / 125000000
             else:
                 collect_time = self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no + \
@@ -356,7 +361,11 @@ class ShieldHit(Engine):
 
             calc_time = self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no
             print(" colect = ", collect_time, " | calc = ", calc_time)
-            collect_time *= self.files_no_multiplier * self.collect_std_deviation * self.collect_coefficient(collect_type)
+            collect_time *= self.files_no_multiplier * self.collect_std_deviation
+            collect_coef = self.collect_coefficient(collect_type)
+            if collect_coef > 0:
+                collect_time *= collect_coef
+
             calc_time *= self.calculation_std_deviation
             print("after coeff | colect = ", collect_time, " | calc = ", calc_time)
 
