@@ -281,8 +281,8 @@ class ShieldHit(Engine):
 
     def predict_best(self, total_particle_no):
         try:
-            coeff = [2 * self.jobs_and_size_regression[1] * self.files_size,
-                     self.jobs_and_size_regression[0] * self.files_size, 0,
+            coeff = [2 * self.jobs_and_size_regression[1] * self.files_size[0],
+                     self.jobs_and_size_regression[0] * self.files_size[0], 0,
                      -self.jobs_and_particles_regression * total_particle_no]
             results = [int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0]
             result = sorted([(x, self._calculation_time(total_particle_no, x)) for x in results], key=lambda x: x[1])[0][0]
@@ -301,19 +301,25 @@ class ShieldHit(Engine):
             count = True
             a = self.density_and_size_regression
             files_size = 0
+            i = 0
+            counter = 0
             with open(detect_file, 'r') as detect:
-                for i, line in enumerate(detect):
-                    if i % 3 == 1:
+                for line in detect:
+                    if line[0] == "*":
+                        i = 0
+                    if i % 4 == 1:
                         count = True
                         scoring = line.split()[0]
                         logger.debug("Found {0} in detect.dat".format(scoring))
                         if scoring == "GEOMAP":
                             count = False
-                    if i % 3 == 2 and count:
+                    if i % 4 == 2 and count:
                         x, y, z = [int(i) for i in line.split()[0:3]]
                         files_size += a * (x * y * z) / 1000000
+                        counter += 1
                         logger.debug("x = {0}, y = {1}, z = {2}, files_size = {3} ".format(x, y, z, files_size))
-            return files_size
+                    i += 1
+            return files_size, counter
         except AttributeError:
             logger.error("Could not calculate size of files! Check correctness of config file for prediction feature")
             return None
@@ -324,8 +330,8 @@ class ShieldHit(Engine):
     def _calculation_time(self, total_particles_no, jobs_no):
         try:
             return self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no + \
-                self.jobs_and_size_regression[0] * self.files_size * jobs_no + \
-                self.jobs_and_size_regression[1] * self.files_size * jobs_no ** 2
+                self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no + \
+                self.jobs_and_size_regression[1] * self.files_size[0] * jobs_no ** 2
         except AttributeError:
             logger.error("Could not estimate calculation time! Check correctness of config file for prediction feature")
             return None

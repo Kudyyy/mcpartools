@@ -8,6 +8,7 @@ import time
 
 from mcpartools.mcengine.common import EngineDiscover
 from mcpartools.scheduler.common import SchedulerDiscover
+from progress.bar import ChargingBar
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ class Generator:
 
                     if total_part_no - self.options.particle_no * self.options.jobs_no > 0:
                         logger.warn("{0} is not divided by {1} !".format(total_part_no, self.options.jobs_no))
-                        logger.warn("{0} particles will be calculated! NOT {1} !".format(
+                        logger.warn("{0} particles will be calculated! NOT {1} !\n".format(
                             self.options.particle_no * self.options.jobs_no, total_part_no))
                 else:
                     return None
@@ -213,6 +214,7 @@ class Generator:
         logger.debug("Generated workspace directory path: " + wspdir_path)
         os.mkdir(wspdir_path)
         self.workspace_dir = wspdir_path
+        bar = ChargingBar("Creating workspace", max=self.options.jobs_no)
 
         for jobid in range(self.options.jobs_no):
             jobdir_name = "job_{0:04d}".format(jobid + 1)
@@ -226,9 +228,11 @@ class Generator:
             self.mc_engine.save_input(jobdir_path)
 
             self.mc_engine.save_run_script(jobdir_path, jobid + 1)
+            bar.next()
 
         self.scheduler.write_main_run_script(jobs_no=self.options.jobs_no, output_dir=self.workspace_dir)
         self.mc_engine.write_collect_script(self.main_dir)
+        bar.finish()
 
     def generate_submit_script(self):
         script_path = os.path.join(self.main_dir, self.scheduler.submit_script)
