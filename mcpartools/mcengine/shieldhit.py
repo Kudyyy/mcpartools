@@ -29,14 +29,15 @@ class ShieldHit(Engine):
             tpl_fd.close()
             logger.debug("Using user run script: " + self.run_script_path)
 
-        config = self.regression_config
-        if config is None:
+        self.config = self.regression_config
+        if self.config is None:
             logger.warning("Could not properly parse configuration file for prediction feature")
         else:
             try:
-                self.jobs_and_particles_regression = float(config["JOBS_AND_PARTICLES"])
-                self.jobs_and_size_regression = [float(config["JOBS_AND_SIZE_A"]), float(config["JOBS_AND_SIZE_B"])]
-                self.density_and_size_regression = float(config["DENSITY_AND_SIZE"])
+                self.jobs_and_particles_regression = float(self.config["JOBS_AND_PARTICLES"])
+                self.jobs_and_size_regression = [float(self.config["JOBS_AND_SIZE_A"]),
+                                                 float(self.config["JOBS_AND_SIZE_B"])]
+                self.density_and_size_regression = float(self.config["DENSITY_AND_SIZE"])
                 logger.debug("Regressions from config file:")
                 logger.debug("JOBS_AND_PARTICLES = {0}".format(self.jobs_and_particles_regression))
                 logger.debug("JOBS_AND_SIZE = {0}".format(self.jobs_and_size_regression))
@@ -279,13 +280,14 @@ class ShieldHit(Engine):
             for line in lines:
                 outfile.write(line)
 
-    def predict_best(self, total_particle_no):
+    def predict_best(self, total_particle_no, collect_type):
         try:
-            coeff = [2 * self.jobs_and_size_regression[1] * self.files_size[0],
-                     self.jobs_and_size_regression[0] * self.files_size[0], 0,
+            coeff = [2 * self.jobs_and_size_regression[1] * self.files_size[0] * self.collect_coefficient(collect_type),
+                     self.jobs_and_size_regression[0] * self.files_size[0] * self.collect_coefficient(collect_type), 0,
                      -self.jobs_and_particles_regression * total_particle_no]
             results = [int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0]
-            result = sorted([(x, self._calculation_time(total_particle_no, x)) for x in results], key=lambda x: x[1])[0][0]
+            result = sorted([(x, self._calculation_time(total_particle_no, x, collect_type)) for x in results],
+                            key=lambda x: x[1])[0][0]
 
             result = self.max_predicted_job_number if result > self.max_predicted_job_number else result
         except ZeroDivisionError:
@@ -314,7 +316,7 @@ class ShieldHit(Engine):
                         if scoring == "GEOMAP":
                             count = False
                     if i % 4 == 2 and count:
-                        x, y, z = [int(i) for i in line.split()[0:3]]
+                        x, y, z = [int(j) for j in line.split()[0:3]]
                         files_size += a * (x * y * z) / 1000000
                         counter += 1
                         logger.debug("x = {0}, y = {1}, z = {2}, files_size = {3} ".format(x, y, z, files_size))
@@ -324,14 +326,32 @@ class ShieldHit(Engine):
             logger.error("Could not calculate size of files! Check correctness of config file for prediction feature")
             return None
 
-    def calculation_time(self, particles_no_per_job, jobs_no):
-        return self._calculation_time(particles_no_per_job * jobs_no, jobs_no)
+    def calculation_time(self, particles_no_per_job, jobs_no, collect_type):
+        return self._calculation_time(particles_no_per_job * jobs_no, jobs_no, collect_type)
 
-    def _calculation_time(self, total_particles_no, jobs_no):
+    def _calculation_time(self, total_particles_no, jobs_no, collect_type):
         try:
-            return self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no + \
+            estimated_relative_time = self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no + \
                 self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no + \
                 self.jobs_and_size_regression[1] * self.files_size[0] * jobs_no ** 2
+
+            collect_min = float(self.config['COLLECT_MIN'])
+            std_deviation = float(self.config['COLLECT_STANDARD_DEVIATION'])
+
+            estimated_time = std_deviation * estimated_relative_time * self.collect_coefficient(collect_type)
+            return estimated_time if estimated_time > collect_min else collect_min
+
         except AttributeError:
             logger.error("Could not estimate calculation time! Check correctness of config file for prediction feature")
             return None
+
+    def collect_coefficient(self, collect_option):
+        collect_coef = {
+            'mv': self.config['MV_COLLECT_COEF'],
+            'cp': self.config['CP_COLLECT_COEF'],
+            'plotdata': self.config['PLOTDATA_COLLECT_COEF'],
+            'image': self.config['IMAGE_COLLECT_COEF'],
+            'custom': self.config['CUSTOM_COLLECT_COEF'],
+        }[collect_option]
+
+        return float(collect_coef)
