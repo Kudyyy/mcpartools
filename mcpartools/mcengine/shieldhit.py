@@ -37,7 +37,11 @@ class ShieldHit(Engine):
                 self.jobs_and_particles_regression = float(self.config["JOBS_AND_PARTICLES"])
                 self.jobs_and_size_regression = [float(self.config["JOBS_AND_SIZE_A"]),
                                                  float(self.config["JOBS_AND_SIZE_B"])]
+                self.files_and_size_regression = [float(self.config["FILES_AND_SIZE_A"]), float(self.config["FILES_AND_SIZE_B"]),
+                                                  float(self.config["FILES_AND_SIZE_C"])]
                 self.density_and_size_regression = float(self.config["DENSITY_AND_SIZE"])
+                self.collect_std_deviation = float(self.config['COLLECT_STANDARD_DEVIATION'])
+                self.calculation_std_deviation = float(self.config['CALCULATION_STANDARD_DEVIATION'])
                 logger.debug("Regressions from config file:")
                 logger.debug("JOBS_AND_PARTICLES = {0}".format(self.jobs_and_particles_regression))
                 logger.debug("JOBS_AND_SIZE = {0}".format(self.jobs_and_size_regression))
@@ -50,6 +54,12 @@ class ShieldHit(Engine):
         self.collect_script_content = resource_string(__name__, self.collect_script).decode('ascii')
 
         self.files_size = self.calculate_size()
+        self.files_no_multiplier = 1 if self.files_size[0] == 0 else (self.files_size[1] / 10.0) * \
+                                        self.files_and_size_regression[0] * \
+                                        (self.files_size[0] - self.files_and_size_regression[1]) ** 2 + \
+                                        self.files_and_size_regression[2] * ((self.files_size[1] + 10) / 10.0)
+
+        print("files = ", self.files_size, " | files_no_multiplier = ", self.files_no_multiplier)
 
         self.particle_no = 1
         self.rng_seed = 1
@@ -282,9 +292,16 @@ class ShieldHit(Engine):
 
     def predict_best(self, total_particle_no, collect_type):
         try:
-            coeff = [2 * self.jobs_and_size_regression[1] * self.files_size[0] * self.collect_coefficient(collect_type),
-                     self.jobs_and_size_regression[0] * self.files_size[0] * self.collect_coefficient(collect_type), 0,
-                     -self.jobs_and_particles_regression * total_particle_no]
+            if self.files_size[0] < 10:
+                coeff = [self.collect_std_deviation * self.files_no_multiplier * self.collect_coefficient(collect_type) * (3 * 15 / 125000000.0),
+                         0, 0, 0, -self.jobs_and_particles_regression * total_particle_no * self.calculation_std_deviation]
+                print("< 10 | ", coeff)
+            else:
+                coeff = [self.collect_std_deviation * self.files_no_multiplier * self.collect_coefficient(collect_type) *
+                         (self.jobs_and_size_regression[1] * self.files_size[0] ** 2 +
+                         self.jobs_and_size_regression[0] * self.files_size[0]), 0,
+                         -self.jobs_and_particles_regression * total_particle_no * self.calculation_std_deviation]
+                print("> 10 | ", coeff)
             results = [int(x.real) for x in np.roots(coeff) if np.isreal(x) and x.real > 0]
             result = sorted([(x, self._calculation_time(total_particle_no, x, collect_type)) for x in results],
                             key=lambda x: x[1])[0][0]
@@ -331,16 +348,19 @@ class ShieldHit(Engine):
 
     def _calculation_time(self, total_particles_no, jobs_no, collect_type):
         try:
-            estimated_relative_time = self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no + \
-                self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no + \
-                self.jobs_and_size_regression[1] * self.files_size[0] * jobs_no ** 2
+            if self.files_size[0] < 10:
+                collect_time = 5 + 15 * (jobs_no ** 3) / 125000000
+            else:
+                collect_time = self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no + \
+                               self.jobs_and_size_regression[1] * jobs_no * self.files_size[0] ** 2
 
-            collect_min = float(self.config['COLLECT_MIN'])
-            std_deviation = float(self.config['COLLECT_STANDARD_DEVIATION'])
+            calc_time = self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no
+            print(" colect = ", collect_time, " | calc = ", calc_time)
+            collect_time *= self.files_no_multiplier * self.collect_std_deviation * self.collect_coefficient(collect_type)
+            calc_time *= self.calculation_std_deviation
+            print("after coeff | colect = ", collect_time, " | calc = ", calc_time)
 
-            estimated_time = std_deviation * estimated_relative_time * self.collect_coefficient(collect_type)
-            return estimated_time if estimated_time > collect_min else collect_min
-
+            return collect_time + calc_time
         except AttributeError:
             logger.error("Could not estimate calculation time! Check correctness of config file for prediction feature")
             return None
