@@ -1,5 +1,7 @@
 import logging
 import os
+from enum import Enum
+
 from pkg_resources import resource_string
 
 from mcpartools.mcengine.mcengine import Engine
@@ -335,31 +337,93 @@ class ShieldHit(Engine):
     def calculate_size(self):
         try:
             beam_file, geo_file, mat_file, detect_file = self.input_files
-            count = True
-            a = self.density_and_size_regression
-            files_size = 0
-            i = 0
-            counter = 0
-            with open(detect_file, 'r') as detect:  # calculate sizes and number of entries
-                for line in detect:
-                    if line[0] == "*":  # new entry in detect.dat
-                        i = 0
-                    if i % 4 == 1:  # check if this entry is GEOMAP and if so, do not take it into account
-                        count = True
-                        scoring = line.split()[0]
-                        logger.debug("Found {0} in detect.dat".format(scoring))
-                        if scoring == "GEOMAP":
-                            count = False
-                    if i % 4 == 2 and count:  # Calculate size of entry and increment counter
-                        x, y, z = [int(j) for j in line.split()[0:3]]
-                        files_size += a * (x * y * z) / 1000000
-                        counter += 1
-                        logger.debug("x = {0}, y = {1}, z = {2}, files_size = {3} ".format(x, y, z, files_size))
-                    i += 1
-            return files_size, counter
+            return self.parse_detect_file(detect_file)
         except AttributeError:
             logger.error("Could not calculate size of files! Check correctness of config file for prediction feature")
             return None
+
+    def parse_detect_file(self, detect_file):
+        class ScoringType(Enum):
+            GEOMAP = 1
+            DIFFERENTIAL = 2
+            PLANE = 3
+            ZONE = 4
+            VOXSCORE = 5
+            TRACE = 6
+            OTHER = 7
+
+        a = self.density_and_size_regression
+        files_size = 0
+        counter = 0
+        scoring_type: ScoringType = None
+        header_found = False
+
+        with open(detect_file, 'r') as detect:  # calculate sizes and number of entries
+            for line in detect:
+                line = line.strip()
+                print(line)
+
+                if line.startswith("*"):  # omit a comment
+                    continue
+
+                if not header_found:
+                    scoring = line.split()[0]
+                    if scoring.startswith("GEOMAP"):
+                        scoring_type = ScoringType.GEOMAP
+                        header_found = True
+
+                    elif scoring.startswith("D"):
+                        scoring_type = ScoringType.DIFFERENTIAL
+                        header_found = True
+
+                    elif scoring.startswith("PLANE"):
+                        scoring_type = ScoringType.PLANE
+                        header_found = True
+
+                    elif scoring.startswith("VOXSCORE"):
+                        scoring_type = ScoringType.VOXSCORE
+                        header_found = True
+
+                    elif scoring.startswith("TRACE"):
+                        scoring_type = ScoringType.TRACE
+                        header_found = True
+
+                    elif scoring.startswith("ZONE"):
+                        print("zone")
+                        scoring_type = ScoringType.ZONE
+                        # Zone scoring have one line record so they are handled here
+                        counter += 1
+
+                        x, y = [int(j) for j in line.split()[1:3]]
+                        if y - x > 0:
+                            files_size += a * (y - x) / 1000000
+
+                    elif scoring.isalpha():  # otherwise it is a number, not scoring
+                        scoring_type = ScoringType.OTHER
+                        header_found = True
+
+                else:
+                    header_found = False
+
+                    if scoring_type == ScoringType.GEOMAP or scoring_type == ScoringType.TRACE:
+                        continue  # Geomap and Trace scoring do not affect file size or number
+
+                    counter += 1
+
+                    if scoring_type == ScoringType.PLANE or scoring_type == ScoringType.VOXSCORE:
+                        continue  # Plane and Voxscore output files are very small
+
+                    x, y, z = [int(j) for j in line.split()[0:3]]
+
+                    if scoring_type == ScoringType.DIFFERENTIAL:
+                        files_size += a * z / 1000000
+
+                    elif scoring_type == ScoringType.OTHER:
+                        files_size += a * (x * y * z) / 1000000
+
+        return files_size, counter
+
+
 
     def calculation_time(self, particles_no_per_job, jobs_no, collect_type):
         return self._calculation_time(particles_no_per_job * jobs_no, jobs_no, collect_type)
@@ -373,8 +437,8 @@ class ShieldHit(Engine):
                 collect_time = self.min_collect_time + self.smallCollectFileCoef * (jobs_no ** 3)
             else:
                 collect_time = (
-                    self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no +
-                    self.jobs_and_size_regression[1] * jobs_no * self.files_size[0] ** 2
+                        self.jobs_and_size_regression[0] * self.files_size[0] * jobs_no +
+                        self.jobs_and_size_regression[1] * jobs_no * self.files_size[0] ** 2
                 )
 
             calc_time = self.jobs_and_particles_regression * (1 / float(jobs_no)) * total_particles_no
